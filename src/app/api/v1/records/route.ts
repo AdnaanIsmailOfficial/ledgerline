@@ -1,4 +1,5 @@
 import { and, desc, eq, gte, lt, sql, type SQL } from "drizzle-orm";
+import { connection } from "next/server";
 import { z } from "zod";
 import type { RecordsResponse } from "@/lib/api-types";
 import { getDb } from "@/lib/db/client";
@@ -21,6 +22,8 @@ const querySchema = z
   .strict();
 
 export async function GET(request: Request): Promise<Response> {
+  // Outside the try block on purpose; see the note in verify/route.ts.
+  await connection();
   try {
     const query = parseOrThrow(querySchema, Object.fromEntries(new URL(request.url).searchParams));
     const db = getDb();

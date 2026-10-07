@@ -169,3 +169,108 @@ raw email and ID number from a prompt appear nowhere in the database.
 them on one thread with a synchronous database driver, so it does not prove
 safety across several processes writing to the same file. The transaction mode
 is chosen to make that safe; it has not been load tested.
+
+## Phase 4: Seed script
+
+**Asked for:** about 200 realistic requests across three fake apps (HR
+assistant, customer support bot, internal code helper) with a mix of ALLOW,
+REDACT and BLOCK.
+
+**What was built:** a script that sends 200 requests through the real gateway
+pipeline with a canned provider, instead of inserting rows directly. The seeded
+log is therefore exactly what live traffic would produce, hash chain and
+checkpoints included, and the script verifies the log before it exits. A seeded
+random generator makes every run produce the same mix: 132 allowed, 45 redacted
+and 23 blocked, including one customer who trips the rate limit.
+
+**What went wrong:** the first plan was to reset the database by deleting the
+file. On Windows that fails while the dev server has the file open.
+
+**How it was caught:** before running it, by thinking through the quickstart
+order (`seed` then `dev`, then `seed` again after the tamper demo).
+
+**What changed:** the script clears the three tables inside one transaction
+instead, which works whether or not the server is running.
+
+## Phase 5: Dashboard
+
+**Asked for:** a live request table with filters by app, decision and date, a
+"Verify integrity" button, a dev-only "Tamper demo" button and a policy viewer.
+
+**What was built:** a client-rendered dashboard that polls every four seconds,
+three small API routes behind it, and a dark-first theme that follows the
+system setting.
+
+**What went wrong:**
+
+1. The first version of the table loaded data by calling an async function from
+   inside a React effect. The lint rule `react-hooks/set-state-in-effect`
+   rejected it.
+2. `next build` printed "unhandled error" lines for three API routes. The
+   handlers called `await connection()` inside their `try` block. During a
+   build, Next.js rejects that call on purpose to say "do not prerender this
+   route", and the `catch` block was treating that signal as a real failure and
+   logging it.
+3. In the browser, the tamper button appeared stuck on "Editing…" and the
+   following click on "Verify integrity" did nothing.
+
+**How it was caught:** item 1 by `eslint`, item 2 by running a production build
+instead of trusting the dev server, item 3 by driving the real page in a
+browser and reading the panel text after each click.
+
+**What changed:**
+
+- The effect now owns the fetch and a `stale` flag set on cleanup, which also
+  fixes a race the first version had: a slow response for old filters could
+  overwrite newer data.
+- `connection()` moved above the `try` block in all three routes, with a
+  comment explaining why it must stay there. The build is now clean.
+- Item 3 turned out not to be a bug. The route was being compiled for the first
+  time by the dev server, which took a few seconds, and the buttons are
+  correctly disabled while a request is in flight. Checked by waiting and
+  re-reading the panel, then confirming the request returned 200.
+
+**How it was checked:** in a real browser: verify passes on a clean log, the
+tamper demo edits record 187, verify then fails naming record 187 with the
+stored and recomputed hashes, the row is highlighted, filters return the same
+counts as a direct SQL query (4 blocked HR requests), and the policy viewer
+shows the YAML on disk. The screenshots in the README are from that run.
+
+**Not checked:** screen readers and keyboard-only use were not tested beyond
+using semantic elements and labels.
+
+## Phase 6: Docker and documentation
+
+**Asked for:** a Dockerfile, a README and this log.
+
+**What was built:** a two-stage Dockerfile, and a README covering the problem,
+quickstart, architecture, how verification works in plain language, tradeoffs
+and next steps.
+
+**Not verified:** the Dockerfile has never been built. Docker is not installed
+on the development machine. The file is deliberately simple (it copies the
+whole built app instead of a trimmed bundle) to reduce the chance that it is
+wrong, and the README says it is untested.
+
+**Not built:** the optional stretch goal, anchoring checkpoint roots to a public
+testnet. It needs a funded testnet wallet. The database column for the
+transaction hash exists, and the README explains why anchoring matters.
+
+## Summary of what the tests and checks caught
+
+| Caught by | What |
+|---|---|
+| Unit test | A phone number classified as a card number |
+| Unit test | A new test that compared against `undefined` |
+| Adversarial test | The limit of what a self-contained log can prove |
+| Lint | State updates fired from inside a React effect |
+| Production build | A framework signal swallowed by a `catch` block |
+| Bundled framework docs | SQLite reads that would have been prerendered and gone stale |
+| Review | Requests for unknown models leaving no audit trail |
+| Dependency install | A Node types version conflict |
+
+## My own notes
+
+<!-- Adnaan: space for your own reflections before you submit. For example:
+     which of the flagged tradeoffs you would decide differently, and what
+     you would ask the agent to do differently next time. -->

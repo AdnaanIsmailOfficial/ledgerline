@@ -4,9 +4,10 @@ import { errorResponse } from "@/lib/errors";
 import { loadAllPolicies } from "@/lib/policy/loader";
 
 export async function GET(): Promise<Response> {
+  // Policies are read from disk on every request, so this must not be prerendered.
+  // Kept outside the try block; see the note in verify/route.ts.
+  await connection();
   try {
-    // Policies are read from disk on every request, so this must not be prerendered.
-    await connection();
     const body: PolicyView[] = loadAllPolicies().map((p) => ({
       app_id: p.policy.app_id,
       name: p.policy.name,
