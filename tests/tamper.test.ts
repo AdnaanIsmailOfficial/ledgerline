@@ -30,8 +30,7 @@ function rewriteChainFrom(fromSeq: number) {
   const rows = db.select().from(auditRecords).orderBy(asc(auditRecords.seq)).all();
   let prev = rows[fromSeq - 2]?.recordHash ?? "0".repeat(64);
   for (const row of rows.slice(fromSeq - 1)) {
-    const { recordHash: _old, ...fields } = row;
-    const next = hashRecord({ ...fields, prevHash: prev });
+    const next = hashRecord({ ...row, prevHash: prev });
     rawSql(db, "UPDATE audit_records SET prev_hash = ?, record_hash = ? WHERE seq = ?", prev, next, row.seq);
     prev = next;
   }
@@ -71,8 +70,7 @@ describe("tamper detection", () => {
   });
 
   it("detects a record whose hash was recomputed to hide an edit, at the next record", () => {
-    const { recordHash: _old, ...fields } = records[5];
-    const forged = hashRecord({ ...fields, decision: "BLOCK" });
+    const forged = hashRecord({ ...records[5], decision: "BLOCK" });
     rawSql(db, "UPDATE audit_records SET decision = 'BLOCK', record_hash = ? WHERE seq = 6", forged);
     expectFailure("broken_link", 7);
   });
