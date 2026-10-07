@@ -17,7 +17,7 @@ export interface GatewayDeps {
   checkpointInterval?: number;
   /** Answer with this adapter instead of the one the model resolves to. */
   adapter?: ProviderAdapter;
-  /** Record this latency instead of the measured one (seed script only). */
+  /** Record this provider latency instead of the measured one (seed script only). */
   latencyMs?: number;
 }
 
@@ -97,7 +97,8 @@ export async function processChat(input: ChatRequest, deps: GatewayDeps): Promis
   } satisfies Partial<NewEntry>;
 
   if (verdict.decision === "BLOCK" || !adapter) {
-    const latencyMs = elapsed();
+    // Always the real measurement: a blocked request never waits on a provider.
+    const latencyMs = Math.round(performance.now() - started);
     const record = appendRecord(
       deps.db,
       { ...base, responseText: null, inputTokens: 0, outputTokens: 0, costMicros: 0, latencyMs, status: "blocked", errorCode: null },
