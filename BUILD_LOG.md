@@ -61,3 +61,44 @@ validation failure, malformed JSON and an unknown model.
 **Not verified:** the real Anthropic and OpenAI code paths are type-checked
 against the official SDKs but have never been run against a live API, because
 no API key was available during the build.
+
+## Phase 2: Policy engine
+
+**Asked for:** per-app YAML policies covering blocked topics, PII redaction
+(emails, phone numbers, SA ID numbers, card numbers), token limits, allowed
+models and per-user rate limits, returning ALLOW, REDACT or BLOCK with the rules
+that fired. Redaction must happen before the prompt leaves the gateway.
+
+**What was built:** a Zod-validated policy schema, a loader that fails loudly on
+a bad policy file, a PII redactor, and `evaluatePolicy`, a pure function with no
+database or network access. It evaluates every rule instead of stopping at the
+first, so the log shows all the reasons a request was stopped.
+
+**What went wrong:** the first version of the redactor labelled the phone number
+`0027 82 123 4567` as a card number. With the spaces removed it is 13 digits
+long, which is a legal card length, and it happens to pass the Luhn checksum.
+The card detector ran before the phone detector, so it won.
+
+**How it was caught:** a parameterised unit test that runs seven phone formats
+through the redactor and asserts the exact placeholder. Six passed and this one
+failed with `[REDACTED_CARD]` where `[REDACTED_PHONE]` was expected.
+
+**What changed:** phone detection now runs before card detection, because a
+dialling prefix is a stronger signal than a checksum that passes one time in
+ten by chance. Reordering created the opposite risk (the start of a spaced card
+number being read as a phone number), so the phone patterns were tightened to
+match only a complete run of digits, and a regression test was added for that
+case too.
+
+**Decision worth knowing:** redaction also runs on blocked requests. Nothing is
+sent to the provider when a request is blocked, but the prompt is still stored
+in the audit payload, and that stored copy should not contain raw PII either.
+
+**How it was checked:** 44 new tests (55 in total) covering each rule type on
+its own, boundary values for the token and rate limits, several rules firing
+together, and four kinds of broken policy file. Four `curl` calls confirmed
+REDACT, two BLOCK variants and an unknown app against the running server.
+
+**Known limits:** topic matching is keyword and regex based, so a determined
+user can rephrase around it. PII detection is tuned for South African formats;
+phone numbers written without a leading `0` or `+` are not detected.

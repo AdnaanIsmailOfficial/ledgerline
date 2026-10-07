@@ -1,0 +1,41 @@
+app_id: support-bot
+name: Customer Support Bot
+description: Public-facing bot that helps customers with orders, deliveries and returns.
+
+allowed_models:
+  - gpt-4o-mini
+  - claude-haiku-4-5
+
+max_input_tokens: 1500
+max_output_tokens: 800
+
+rate_limit:
+  requests: 10
+  window_seconds: 60
+
+blocked_topics:
+  - id: legal-advice
+    description: The bot must not give legal opinions or discuss litigation.
+    keywords:
+      - sue you
+      - lawsuit
+      - legal advice
+      - my lawyer
+  - id: competitor-comparison
+    description: No commentary on competitors.
+    keywords:
+      - cheaper than you
+      - better than your competitor
+    patterns:
+      - "compare (you|your (prices|service)) (to|with|against)"
+  - id: prompt-injection
+    description: Attempts to override the bot's instructions.
+    patterns:
+      - "ignore (all |any )?(your |the )?(previous|prior|above) instructions"
+      - "reveal (your|the) system prompt"
+
+pii_redaction:
+  - email
+  - phone
+  - sa_id
+  - card

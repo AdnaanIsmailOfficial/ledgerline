@@ -1,0 +1,35 @@
+app_id: code-helper
+name: Internal Code Helper
+description: Helps engineers read, write and review code.
+
+allowed_models:
+  - claude-opus-5-5
+  - claude-sonnet-5-5
+  - gpt-4o
+
+max_input_tokens: 6000
+max_output_tokens: 2048
+
+rate_limit:
+  requests: 30
+  window_seconds: 60
+
+blocked_topics:
+  - id: secret-leak
+    description: Credentials must never be pasted into a prompt.
+    keywords:
+      - production database password
+    patterns:
+      - "AKIA[0-9A-Z]{16}"
+      - "-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"
+      - "sk_live_[0-9a-zA-Z]{16,}"
+  - id: malware
+    description: No help building malicious software.
+    keywords:
+      - keylogger
+      - ransomware
+      - bypass the licence check
+
+pii_redaction:
+  - email
+  - card

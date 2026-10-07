@@ -1,0 +1,42 @@
+app_id: hr-assistant
+name: HR Assistant
+description: Answers staff questions about leave, benefits and company policy.
+
+allowed_models:
+  - claude-sonnet-5-5
+  - claude-haiku-4-5
+
+max_input_tokens: 2000
+max_output_tokens: 1024
+
+rate_limit:
+  requests: 20
+  window_seconds: 60
+
+blocked_topics:
+  - id: salary-disclosure
+    description: Never reveal or discuss what a named colleague earns.
+    keywords:
+      - salary of
+      - payslip of
+      - how much does
+    patterns:
+      - "what (does|do) .{1,40} (earn|get paid)"
+  - id: medical-records
+    description: Health information about staff stays out of the assistant.
+    keywords:
+      - medical record
+      - medical records
+      - diagnosis
+      - sick note for
+  - id: disciplinary-records
+    description: Disciplinary history is handled by HR staff, not the assistant.
+    keywords:
+      - disciplinary record
+      - written warning for
+      - disciplinary hearing of
+
+pii_redaction:
+  - email
+  - phone
+  - sa_id

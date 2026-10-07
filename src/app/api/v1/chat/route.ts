@@ -11,7 +11,8 @@ export async function POST(request: Request): Promise<Response> {
       throw new GatewayError(400, "invalid_json", "Request body must be valid JSON");
     }
     const input = parseOrThrow(chatRequestSchema, body);
-    return Response.json(await processChat(input));
+    const outcome = await processChat(input);
+    return Response.json(outcome.body, { status: outcome.status });
   } catch (err) {
     return errorResponse(err);
   }
