@@ -102,3 +102,70 @@ REDACT, two BLOCK variants and an unknown app against the running server.
 **Known limits:** topic matching is keyword and regex based, so a determined
 user can rephrase around it. PII detection is tuned for South African formats;
 phone numbers written without a leading `0` or `+` are not detected.
+
+## Phase 3: Verifiable audit log
+
+**Asked for:** every request stored in SQLite as a hash-chained record holding
+hashes of the prompt and response, a Merkle checkpoint every 50 records, a
+verify endpoint that names the exact record where tampering is found, and an
+endpoint returning a Merkle inclusion proof for one record.
+
+**What was built:**
+
+- `appendRecord` reads the current head and inserts the next record inside one
+  `IMMEDIATE` SQLite transaction, so concurrent requests cannot fork the chain.
+  A checkpoint is written in the same transaction as the record that completes
+  its batch.
+- `hashRecord` lists every hashed field by name and includes a version number,
+  so adding a column later cannot silently change old hashes.
+- `verifyChain` recomputes everything from row contents and reports one of six
+  failure types with the record number, the expected value and the actual value.
+- Merkle trees follow RFC 6962: separate prefixes for leaves and internal
+  nodes, and no duplicated last node.
+
+**What went wrong:**
+
+1. Writing the tamper tests exposed a real limit of the design, not a bug in the
+   code. An attacker who edits a record in the newest, not yet checkpointed part
+   of the log and then recomputes every hash after it leaves a log that verifies
+   cleanly. The same is true under a checkpoint if they also rewrite the
+   checkpoint root. A database cannot defend itself against someone who can
+   rewrite all of it.
+2. Phase 1 returned a plain 400 for a model no provider serves, which meant the
+   request left no trace in the log. For an audit product that is the wrong
+   call: a request for a model the app is not allowed to use is a policy event.
+3. One new test was itself wrong. It read the expected record id before the
+   call that creates the record, so it compared against `undefined` and failed.
+
+**How it was caught:** items 1 and 3 by the test suite. Item 1 only showed up
+because the tests include a helper that plays a careful attacker, recomputing
+the chain after an edit, instead of only testing clumsy single-field edits.
+Item 2 was caught on review while wiring the audit log into the gateway.
+
+**What changed:**
+
+- The limit in item 1 is now pinned down by two tests that assert the log does
+  verify after a full rewrite, so the behaviour is documented and cannot change
+  unnoticed. The README states it plainly. Anchoring checkpoint roots somewhere
+  the attacker cannot write (the stretch goal) is the real fix.
+- Unknown models are now blocked by the `model_not_allowed` rule and logged
+  like any other blocked request.
+- The broken test was rewritten to capture the error first and read the record
+  id afterwards.
+
+**Addition beyond the brief:** verification also checks that stored prompt and
+response text still hashes to the values in the record, and that no checkpoint
+covers records that have gone missing. Both fell out of the design for free and
+close obvious gaps (edited text, a truncated log).
+
+**How it was checked:** 58 new tests (113 in total). The tamper tests edit 11
+different columns one at a time, delete a record, forge a single hash, rewrite
+the whole chain, truncate the log, edit a checkpoint and edit payload text,
+asserting the failure type and record number each time. Merkle proofs are
+checked for every leaf in every tree size from 1 to 33. One test confirms the
+raw email and ID number from a prompt appear nowhere in the database.
+
+**Not verified:** the concurrency test fires 25 requests at once, but Node runs
+them on one thread with a synchronous database driver, so it does not prove
+safety across several processes writing to the same file. The transaction mode
+is chosen to make that safe; it has not been load tested.
